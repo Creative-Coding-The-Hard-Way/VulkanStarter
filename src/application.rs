@@ -1,6 +1,7 @@
 use log;
 use std::error::Error;
 use std::sync::Arc;
+use vulkano::device::{Device, DeviceExtensions, Features, Queue};
 use vulkano::instance::debug::{DebugCallback, MessageSeverity, MessageType};
 use vulkano::instance::{
     layers_list, ApplicationInfo, Instance, InstanceExtensions, PhysicalDevice,
@@ -17,7 +18,7 @@ const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
 struct QueueFamilyIndices {
-    graphics_family: Option<i32>,
+    graphics_family: Option<usize>,
 }
 
 impl QueueFamilyIndices {
@@ -38,6 +39,8 @@ pub struct Application {
     event_loop: Option<EventLoop<()>>,
     window: Window,
     physical_device_index: usize,
+    device: Arc<Device>,
+    queue: Arc<Queue>,
 }
 
 impl Application {
@@ -53,6 +56,8 @@ impl Application {
         let instance = Self::create_instance()?;
         let debug_callback = Self::setup_debug_callback(&instance);
         let physical_device_index = Self::pick_physical_device(&instance)?;
+        let (device, queue) =
+            Self::create_logical_device(&instance, physical_device_index)?;
 
         Ok(Self {
             _debug_callback: debug_callback,
@@ -60,7 +65,40 @@ impl Application {
             event_loop: Option::Some(event_loop),
             window,
             physical_device_index,
+            device,
+            queue,
         })
+    }
+
+    fn create_logical_device(
+        instance: &Arc<Instance>,
+        physical_device_index: usize,
+    ) -> DynResult<(Arc<Device>, Arc<Queue>)> {
+        let physical_device =
+            PhysicalDevice::from_index(instance, physical_device_index)
+                .ok_or("unable to get physical device using index!")?;
+
+        let indices = Self::find_queue_families(&physical_device);
+
+        let family = physical_device
+            .queue_families()
+            .nth(indices.graphics_family.unwrap())
+            .ok_or("unable to select device queue family")?;
+
+        let prioritized_queues = [(family, 1.0f32)];
+
+        let (device, mut queues) = Device::new(
+            physical_device,
+            &Features::none(),
+            &DeviceExtensions::none(),
+            prioritized_queues.iter().cloned(),
+        )?;
+
+        let queue = queues
+            .next()
+            .ok_or("no suitable queue is available at this priority")?;
+
+        Ok((device, queue))
     }
 
     fn pick_physical_device(instance: &Arc<Instance>) -> Result<usize, String> {
@@ -90,7 +128,7 @@ impl Application {
 
         for (i, family) in device.queue_families().enumerate() {
             if family.supports_graphics() {
-                indices.graphics_family = Some(i as i32);
+                indices.graphics_family = Some(i);
             }
 
             if indices.is_complete() {
@@ -143,20 +181,22 @@ impl Application {
         DebugCallback::new(instance, severity, msgtype, |msg| {
             match msg.severity {
                 MessageSeverity { error: true, .. } => {
-                    log::error!("{:?}", msg.description)
+                    log::error!("Vulkan Debug Callback\n{:?}", msg.description)
                 }
                 MessageSeverity { warning: true, .. } => {
-                    log::warn!("{:?}", msg.description)
+                    log::warn!("Vulkan Debug Callback\n{:?}", msg.description)
                 }
                 MessageSeverity {
                     information: true, ..
                 } => {
-                    log::info!("{:?}", msg.description);
+                    log::info!("Vulkan Debug Callback\n{:?}", msg.description);
                 }
                 MessageSeverity { verbose: true, .. } => {
-                    log::debug!("{:?}", msg.description);
+                    log::debug!("Vulkan Debug Callback\n{:?}", msg.description);
                 }
-                _ => log::debug!("{:?}", msg.description),
+                _ => {
+                    log::debug!("Vulkan Debug Callback\n{:?}", msg.description)
+                }
             }
         })
         .ok()
