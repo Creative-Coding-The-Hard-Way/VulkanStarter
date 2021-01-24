@@ -1,16 +1,22 @@
+use log;
 use std::error::Error;
+use std::sync::Arc;
+use vulkano::instance::{
+    ApplicationInfo, Instance, InstanceExtensions, Version,
+};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
 pub struct Application {
+    instance: Arc<Instance>,
     event_loop: Option<EventLoop<()>>,
     window: Window,
 }
 
 impl Application {
-    pub fn initialize() -> Result<Application, Box<dyn Error>> {
+    pub fn initialize() -> Result<Self, Box<dyn Error>> {
         let event_loop: EventLoop<()> = EventLoop::new();
         let window: Window = WindowBuilder::new()
             .with_title("vulkan experiments")
@@ -19,11 +25,47 @@ impl Application {
             .with_visible(true)
             .with_inner_size(LogicalSize::new(1366, 768))
             .build(&event_loop)?;
+        let instance = Self::create_instance()?;
 
-        Ok(Application {
+        Ok(Self {
+            instance,
             event_loop: Option::Some(event_loop),
             window,
         })
+    }
+
+    fn create_instance() -> Result<Arc<Instance>, Box<dyn Error>> {
+        let supported_extensions = InstanceExtensions::supported_by_core()?;
+        let required_extensions = vulkano_win::required_extensions();
+        log::info!(
+            "supported extensions \n {}",
+            format!("{:?}", supported_extensions)
+                .as_str()
+                .replace(",", "\n")
+                .replace("[", "")
+                .replace("]", "")
+        );
+        log::info!(
+            "required extensions \n {}",
+            format!("{:?}", required_extensions)
+                .as_str()
+                .replace(",", "\n")
+                .replace("[", "")
+                .replace("]", "")
+        );
+
+        let app_info = ApplicationInfo {
+            application_name: Some("Vulkan Experiments".into()),
+            application_version: Some(Version {
+                major: 1,
+                minor: 0,
+                patch: 0,
+            }),
+            engine_name: Some("no engine".into()),
+            engine_version: None,
+        };
+
+        Ok(Instance::new(Some(&app_info), &required_extensions, None)?)
     }
 
     /**
