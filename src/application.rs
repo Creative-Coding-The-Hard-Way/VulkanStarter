@@ -14,15 +14,34 @@ use winit::window::{Window, WindowBuilder};
 const VALIDATION_LAYERS: &[&str] = &["VK_LAYER_KHRONOS_validation"];
 const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 
+type DynResult<T> = Result<T, Box<dyn Error>>;
+
+struct QueueFamilyIndices {
+    graphics_family: Option<i32>,
+}
+
+impl QueueFamilyIndices {
+    fn new() -> Self {
+        Self {
+            graphics_family: None,
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.graphics_family.is_some()
+    }
+}
+
 pub struct Application {
-    debug_callback: Option<DebugCallback>,
+    _debug_callback: Option<DebugCallback>,
     instance: Arc<Instance>,
     event_loop: Option<EventLoop<()>>,
     window: Window,
+    physical_device_index: usize,
 }
 
 impl Application {
-    pub fn initialize() -> Result<Self, Box<dyn Error>> {
+    pub fn initialize() -> DynResult<Self> {
         let event_loop: EventLoop<()> = EventLoop::new();
         let window: Window = WindowBuilder::new()
             .with_title("vulkan experiments")
@@ -33,24 +52,56 @@ impl Application {
             .build(&event_loop)?;
         let instance = Self::create_instance()?;
         let debug_callback = Self::setup_debug_callback(&instance);
-        Self::pick_physical_device(&instance);
+        let physical_device_index = Self::pick_physical_device(&instance)?;
 
         Ok(Self {
-            debug_callback,
+            _debug_callback: debug_callback,
             instance,
             event_loop: Option::Some(event_loop),
             window,
+            physical_device_index,
         })
     }
 
-    fn pick_physical_device(instance: &Arc<Instance>) {
-        let names: Vec<String> = PhysicalDevice::enumerate(&instance)
-            .map(|device| device.name().to_owned())
+    fn pick_physical_device(instance: &Arc<Instance>) -> Result<usize, String> {
+        let devices: Vec<PhysicalDevice> =
+            PhysicalDevice::enumerate(&instance).collect();
+        let names: Vec<String> = devices
+            .iter()
+            .map(|properties| properties.name().to_owned())
             .collect();
         log::info!("available devices\n  {}", names.join("\n  "));
+
+        devices
+            .iter()
+            .position(|device| Self::is_device_suitable(&device))
+            .ok_or("unable to find a physical device".to_owned())
     }
 
-    fn check_debug_layers() -> Result<bool, Box<dyn Error>> {
+    /// Find a device which suits the application's needs
+    fn is_device_suitable(device: &PhysicalDevice) -> bool {
+        let indices: QueueFamilyIndices = Self::find_queue_families(device);
+        indices.is_complete()
+    }
+
+    /// Find a device which has support for a graphics command queue
+    fn find_queue_families(device: &PhysicalDevice) -> QueueFamilyIndices {
+        let mut indices = QueueFamilyIndices::new();
+
+        for (i, family) in device.queue_families().enumerate() {
+            if family.supports_graphics() {
+                indices.graphics_family = Some(i as i32);
+            }
+
+            if indices.is_complete() {
+                break;
+            }
+        }
+
+        indices
+    }
+
+    fn check_debug_layers() -> DynResult<bool> {
         let available_layers: Vec<String> = layers_list()?
             .map(|layer| layer.name().to_owned())
             .collect();
@@ -111,7 +162,7 @@ impl Application {
         .ok()
     }
 
-    fn create_instance() -> Result<Arc<Instance>, Box<dyn Error>> {
+    fn create_instance() -> DynResult<Arc<Instance>> {
         if ENABLE_VALIDATION_LAYERS && !Self::check_debug_layers()? {
             log::warn!(
                 "validation layers requested, but they were not all avialable!"
