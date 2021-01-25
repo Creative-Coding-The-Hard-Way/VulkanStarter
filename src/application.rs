@@ -7,6 +7,8 @@ use vulkano::instance::{
     layers_list, ApplicationInfo, Instance, InstanceExtensions, PhysicalDevice,
     Version,
 };
+use vulkano::swapchain::Surface;
+use vulkano_win::VkSurfaceBuild;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -19,91 +21,127 @@ type DynResult<T> = Result<T, Box<dyn Error>>;
 
 struct QueueFamilyIndices {
     graphics_family: Option<usize>,
+    present_family: Option<usize>,
 }
 
 impl QueueFamilyIndices {
     fn new() -> Self {
         Self {
             graphics_family: None,
+            present_family: None,
         }
     }
 
+    fn is_same_queue(&self) -> bool {
+        self.graphics_family == self.present_family
+    }
+
     fn is_complete(&self) -> bool {
-        self.graphics_family.is_some()
+        self.graphics_family.is_some() && self.present_family.is_some()
     }
 }
 
 pub struct Application {
-    _debug_callback: Option<DebugCallback>,
+    // vulkan library resources
     instance: Arc<Instance>,
+    _debug_callback: Option<DebugCallback>,
+
+    // window/surface resources
+    surface: Arc<Surface<Window>>,
     event_loop: Option<EventLoop<()>>,
-    window: Window,
+
+    // devices and queues
     physical_device_index: usize,
     device: Arc<Device>,
-    queue: Arc<Queue>,
+    graphics_queue: Arc<Queue>,
+    present_queue: Arc<Queue>,
 }
 
 impl Application {
     pub fn initialize() -> DynResult<Self> {
+        let instance = Self::create_instance()?;
+        let debug_callback = Self::setup_debug_callback(&instance);
+
         let event_loop: EventLoop<()> = EventLoop::new();
-        let window: Window = WindowBuilder::new()
+        let surface = WindowBuilder::new()
             .with_title("vulkan experiments")
             .with_resizable(false)
             .with_decorations(true)
             .with_visible(true)
             .with_inner_size(LogicalSize::new(1366, 768))
-            .build(&event_loop)?;
-        let instance = Self::create_instance()?;
-        let debug_callback = Self::setup_debug_callback(&instance);
-        let physical_device_index = Self::pick_physical_device(&instance)?;
-        let (device, queue) =
-            Self::create_logical_device(&instance, physical_device_index)?;
+            .build_vk_surface(&event_loop, instance.clone())?;
+
+        let physical_device_index =
+            Self::pick_physical_device(&surface, &instance)?;
+        let (device, graphics_queue, present_queue) =
+            Self::create_logical_device(
+                &instance,
+                &surface,
+                physical_device_index,
+            )?;
 
         Ok(Self {
             _debug_callback: debug_callback,
+            surface,
             instance,
             event_loop: Option::Some(event_loop),
-            window,
             physical_device_index,
             device,
-            queue,
+            graphics_queue,
+            present_queue,
         })
     }
 
     fn create_logical_device(
         instance: &Arc<Instance>,
+        surface: &Arc<Surface<Window>>,
         physical_device_index: usize,
-    ) -> DynResult<(Arc<Device>, Arc<Queue>)> {
+    ) -> DynResult<(Arc<Device>, Arc<Queue>, Arc<Queue>)> {
         let physical_device =
             PhysicalDevice::from_index(instance, physical_device_index)
                 .ok_or("unable to get physical device using index!")?;
 
-        let indices = Self::find_queue_families(&physical_device);
+        let indices = Self::find_queue_families(surface, &physical_device)?;
+        let unique_indices = if indices.is_same_queue() {
+            vec![indices.graphics_family.unwrap()]
+        } else {
+            vec![
+                indices.graphics_family.unwrap(),
+                indices.present_family.unwrap(),
+            ]
+        };
 
-        let family = physical_device
-            .queue_families()
-            .nth(indices.graphics_family.unwrap())
-            .ok_or("unable to select device queue family")?;
-
-        let prioritized_queues = [(family, 1.0f32)];
+        let families = unique_indices
+            .iter()
+            .map(|index| physical_device.queue_families().nth(*index).unwrap())
+            .map(|family| (family, 1.0f32));
 
         let (device, mut queues) = Device::new(
             physical_device,
             &Features::none(),
             &DeviceExtensions::none(),
-            prioritized_queues.iter().cloned(),
+            families,
         )?;
 
-        let queue = queues
-            .next()
-            .ok_or("no suitable queue is available at this priority")?;
+        let graphics_queue =
+            queues.next().ok_or("no graphics queue available")?;
 
-        Ok((device, queue))
+        let present_queue = if indices.is_same_queue() {
+            graphics_queue.clone()
+        } else {
+            queues.next().ok_or("no present queue available")?
+        };
+
+        Ok((device, graphics_queue, present_queue))
     }
 
-    fn pick_physical_device(instance: &Arc<Instance>) -> Result<usize, String> {
+    fn pick_physical_device(
+        surface: &Arc<Surface<Window>>,
+        instance: &Arc<Instance>,
+    ) -> Result<usize, String> {
         let devices: Vec<PhysicalDevice> =
             PhysicalDevice::enumerate(&instance).collect();
+
         let names: Vec<String> = devices
             .iter()
             .map(|properties| properties.name().to_owned())
@@ -112,18 +150,33 @@ impl Application {
 
         devices
             .iter()
-            .position(|device| Self::is_device_suitable(&device))
+            .position(|device| Self::is_device_suitable(&surface, &device))
             .ok_or("unable to find a physical device".to_owned())
     }
 
     /// Find a device which suits the application's needs
-    fn is_device_suitable(device: &PhysicalDevice) -> bool {
-        let indices: QueueFamilyIndices = Self::find_queue_families(device);
-        indices.is_complete()
+    fn is_device_suitable(
+        surface: &Arc<Surface<Window>>,
+        device: &PhysicalDevice,
+    ) -> bool {
+        match Self::find_queue_families(surface, device) {
+            Ok(indices) => indices.is_complete(),
+            Err(error) => {
+                log::warn!(
+                    "{:?} has no suitable command queues because {:?}",
+                    device.name(),
+                    error
+                );
+                false
+            }
+        }
     }
 
     /// Find a device which has support for a graphics command queue
-    fn find_queue_families(device: &PhysicalDevice) -> QueueFamilyIndices {
+    fn find_queue_families(
+        surface: &Arc<Surface<Window>>,
+        device: &PhysicalDevice,
+    ) -> DynResult<QueueFamilyIndices> {
         let mut indices = QueueFamilyIndices::new();
 
         for (i, family) in device.queue_families().enumerate() {
@@ -131,12 +184,16 @@ impl Application {
                 indices.graphics_family = Some(i);
             }
 
+            if surface.is_supported(family)? {
+                indices.present_family = Some(i);
+            }
+
             if indices.is_complete() {
                 break;
             }
         }
 
-        indices
+        Ok(indices)
     }
 
     fn check_debug_layers() -> DynResult<bool> {
@@ -246,7 +303,7 @@ impl Application {
      * Render the screen.
      */
     fn render(&self) {
-        self.window.request_redraw();
+        self.surface.window().request_redraw();
     }
 
     /**
