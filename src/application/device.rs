@@ -62,17 +62,30 @@ fn is_device_suitable(
     surface: &Arc<Surface<Window>>,
     device: &PhysicalDevice,
 ) -> bool {
-    match QueueFamilyIndices::find(surface, device) {
-        Ok(_) => check_device_extension_support(&device),
-        Err(error) => {
-            log::warn!(
-                "{:?} is not suitable because - {:?}",
-                device.name(),
-                error
-            );
-            false
-        }
-    }
+    let queue_supported = QueueFamilyIndices::find(surface, device)
+        .map_or_else(
+            |error| {
+                log::warn!(
+                    "{:?} is not suitable because - {:?}",
+                    device.name(),
+                    error
+                );
+                false
+            },
+            |_indices| true,
+        );
+    let extensions_supported = check_device_extension_support(&device);
+    let swap_chain_adequate = if extensions_supported {
+        let capabilities = surface
+            .capabilities(*device)
+            .expect("unable to get surface capabilities");
+        !capabilities.supported_formats.is_empty()
+            && capabilities.present_modes.iter().next().is_some()
+    } else {
+        false
+    };
+
+    queue_supported && extensions_supported && swap_chain_adequate
 }
 
 /// Check that the device supports all of the required extensions

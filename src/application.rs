@@ -1,9 +1,11 @@
 use std::error::Error;
 use std::sync::Arc;
 use vulkano::device::{Device, Queue};
+use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
 use vulkano::swapchain::Surface;
+use vulkano::swapchain::Swapchain;
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
@@ -12,6 +14,7 @@ use winit::window::{Window, WindowBuilder};
 
 mod device;
 mod instance;
+mod swapchain;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
@@ -23,6 +26,8 @@ pub struct Application {
     // window/surface resources
     surface: Arc<Surface<Window>>,
     event_loop: Option<EventLoop<()>>,
+    _swapchain: Arc<Swapchain<Window>>,
+    _swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
 
     // devices and queues
     _device: Arc<Device>,
@@ -48,12 +53,26 @@ impl Application {
             device::pick_physical_device(&surface, &instance)?;
         let (device, graphics_queue, present_queue) =
             device::create_logical_device(&surface, &physical_device)?;
+        let (swapchain, swapchain_images) = swapchain::create_swap_chain(
+            &surface,
+            &physical_device,
+            &device,
+            &graphics_queue,
+            &present_queue,
+        )?;
 
         Ok(Self {
-            _debug_callback: debug_callback,
-            surface,
+            // library resources
             _instance: instance,
+            _debug_callback: debug_callback,
+
+            // window/surface resources
+            surface,
             event_loop: Option::Some(event_loop),
+            _swapchain: swapchain,
+            _swapchain_images: swapchain_images,
+
+            // devices and queues
             _device: device,
             _graphics_queue: graphics_queue,
             _present_queue: present_queue,
