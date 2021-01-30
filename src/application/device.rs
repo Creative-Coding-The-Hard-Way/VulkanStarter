@@ -13,11 +13,9 @@ type DynResult<T> = Result<T, Box<dyn Error>>;
 
 /// Create a logical device and command queues
 pub fn create_logical_device(
-    instance: &Arc<Instance>,
     surface: &Arc<Surface<Window>>,
+    physical_device: &PhysicalDevice,
 ) -> DynResult<(Arc<Device>, Arc<Queue>, Arc<Queue>)> {
-    let physical_device = pick_physical_device(surface, instance)?;
-
     let indices = QueueFamilyIndices::find(surface, &physical_device)?;
     let unique_indices = indices.unique_indices();
 
@@ -27,9 +25,9 @@ pub fn create_logical_device(
         .map(|family| (family, 1.0f32));
 
     let (device, queues) = Device::new(
-        physical_device,
+        *physical_device,
         &Features::none(),
-        &DeviceExtensions::none(),
+        &required_device_extensions(),
         families,
     )?;
 
@@ -39,7 +37,7 @@ pub fn create_logical_device(
 }
 
 /// Take the first suitable physical device
-fn pick_physical_device<'a>(
+pub fn pick_physical_device<'a>(
     surface: &Arc<Surface<Window>>,
     instance: &'a Arc<Instance>,
 ) -> Result<PhysicalDevice<'a>, String> {
@@ -65,7 +63,7 @@ fn is_device_suitable(
     device: &PhysicalDevice,
 ) -> bool {
     match QueueFamilyIndices::find(surface, device) {
-        Ok(_) => true,
+        Ok(_) => check_device_extension_support(&device),
         Err(error) => {
             log::warn!(
                 "{:?} is not suitable because - {:?}",
@@ -74,5 +72,21 @@ fn is_device_suitable(
             );
             false
         }
+    }
+}
+
+/// Check that the device supports all of the required extensions
+fn check_device_extension_support(device: &PhysicalDevice) -> bool {
+    let extensions = DeviceExtensions::supported_by_device(*device);
+    extensions
+        .intersection(&required_device_extensions())
+        .khr_swapchain
+}
+
+/// Yield the set of required device extensions
+fn required_device_extensions() -> DeviceExtensions {
+    DeviceExtensions {
+        khr_swapchain: true,
+        ..DeviceExtensions::none()
     }
 }

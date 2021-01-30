@@ -44,8 +44,10 @@ impl Application {
             .with_inner_size(LogicalSize::new(1366, 768))
             .build_vk_surface(&event_loop, instance.clone())?;
 
+        let physical_device =
+            device::pick_physical_device(&surface, &instance)?;
         let (device, graphics_queue, present_queue) =
-            device::create_logical_device(&instance, &surface)?;
+            device::create_logical_device(&surface, &physical_device)?;
 
         Ok(Self {
             _debug_callback: debug_callback,
