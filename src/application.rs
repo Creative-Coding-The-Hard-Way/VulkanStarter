@@ -1,10 +1,11 @@
 use std::error::Error;
 use std::sync::Arc;
+use vulkano::buffer::BufferAccess;
 use vulkano::command_buffer::{
     AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState,
 };
 use vulkano::format::ClearValue;
-use vulkano::pipeline::vertex::BufferlessVertices;
+use vulkano::pipeline::GraphicsPipelineAbstract;
 use vulkano::swapchain::acquire_next_image;
 use vulkano::sync::GpuFuture;
 use winit::event::{Event, WindowEvent};
@@ -14,18 +15,19 @@ use crate::display::Display;
 
 mod triangle_pipeline;
 
-use triangle_pipeline::GraphicsPipelineComplete;
-
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
 pub struct Application {
     // vulkan display resources
     display: Display,
 
-    pipeline: Arc<GraphicsPipelineComplete>,
+    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 
     // command buffers
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
+
+    // vertex buffers
+    triangle_vertices: Arc<dyn BufferAccess + Send + Sync>,
 }
 
 impl Application {
@@ -38,10 +40,14 @@ impl Application {
             &display.render_pass,
         )?;
 
+        let triangle_vertices =
+            triangle_pipeline::create_vertex_buffer(&display.device);
+
         let mut app = Self {
             display,
             pipeline,
             command_buffers: vec![],
+            triangle_vertices,
         };
         app.build_command_buffers();
         Ok(app)
@@ -49,16 +55,11 @@ impl Application {
 
     fn build_command_buffers(&mut self) {
         let family = self.display.graphics_queue.family();
-
         self.command_buffers = self
             .display
             .framebuffer_images
             .iter()
             .map(|framebuffer_image| {
-                let vertices = BufferlessVertices {
-                    vertices: 3,
-                    instances: 1,
-                };
                 let mut builder =
                     AutoCommandBufferBuilder::primary_simultaneous_use(
                         self.display.device.clone(),
@@ -76,7 +77,7 @@ impl Application {
                     .draw(
                         self.pipeline.clone(),
                         &DynamicState::none(),
-                        vertices,
+                        vec![self.triangle_vertices.clone()],
                         (),
                         (),
                     )

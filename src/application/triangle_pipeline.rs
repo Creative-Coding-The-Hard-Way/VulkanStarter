@@ -1,27 +1,54 @@
 use std::error::Error;
 use std::sync::Arc;
-use vulkano::descriptor::PipelineLayoutAbstract;
+use vulkano::buffer::{BufferAccess, BufferUsage, CpuAccessibleBuffer};
 use vulkano::device::Device;
 use vulkano::framebuffer::{RenderPassAbstract, Subpass};
+use vulkano::impl_vertex;
 use vulkano::pipeline::{
-    vertex::BufferlessDefinition, viewport::Viewport, GraphicsPipeline,
+    viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract,
 };
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
 type DynRenderPass = dyn RenderPassAbstract + Send + Sync;
 
-// concrete type is required because we're using the BufferlessDefinition
-pub type GraphicsPipelineComplete = GraphicsPipeline<
-    BufferlessDefinition,
-    Box<dyn PipelineLayoutAbstract + Send + Sync>,
-    Arc<dyn RenderPassAbstract + Send + Sync>,
->;
+#[derive(Default, Debug, Copy, Clone)]
+pub struct Vertex {
+    pub inPosition: [f32; 2],
+    pub inColor: [f32; 4],
+}
+
+impl_vertex!(Vertex, inPosition, inColor);
+
+impl Vertex {
+    pub fn new(pos: [f32; 2], color: [f32; 4]) -> Self {
+        Self {
+            inPosition: pos,
+            inColor: color,
+        }
+    }
+}
+
+pub fn create_vertex_buffer(
+    device: &Arc<Device>,
+) -> Arc<dyn BufferAccess + Send + Sync> {
+    CpuAccessibleBuffer::from_data(
+        device.clone(),
+        BufferUsage::vertex_buffer(),
+        false,
+        [
+            Vertex::new([0.0, -0.5], [1.0, 1.0, 1.0, 1.0]),
+            Vertex::new([0.5, 0.5], [1.0, 1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, 0.5], [1.0, 1.0, 1.0, 1.0]),
+        ],
+    )
+    .expect("unable to create a vertex buffer")
+}
 
 pub fn create_graphics_pipeline(
     device: &Arc<Device>,
     swapchain_extent: [u32; 2],
     render_pass: &Arc<DynRenderPass>,
-) -> DynResult<Arc<GraphicsPipelineComplete>> {
+) -> DynResult<Arc<dyn GraphicsPipelineAbstract + Send + Sync>> {
     mod vertex_shader {
         //
         vulkano_shaders::shader! {
@@ -30,23 +57,14 @@ pub fn create_graphics_pipeline(
             #version 450
             #extension GL_ARB_separate_shader_objects : enable
 
+            layout(location = 0) in vec2 inPosition;
+            layout(location = 1) in vec4 inColor;
+
             layout(location = 0) out vec4 vertColor;
 
-            vec2 positions[] = vec2[] (
-                vec2(0.0, -0.5),
-                vec2(0.5, 0.5),
-                vec2(-0.5, 0.5)
-            );
-
-            vec3 colors[] = vec3[] (
-                vec3(1.0, 0.0, 0.0),
-                vec3(0.0, 1.0, 0.0),
-                vec3(0.0, 0.0, 1.0)
-            );
-
             void main() {
-                vertColor = vec4(colors[gl_VertexIndex], 1.0);
-                gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+                vertColor = inColor;
+                gl_Position = vec4(inPosition, 0.0, 1.0);
             }
             "#
         }
@@ -81,7 +99,7 @@ pub fn create_graphics_pipeline(
 
     let pipeline = Arc::new(
         GraphicsPipeline::start()
-            .vertex_input(BufferlessDefinition {})
+            .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(vert.main_entry_point(), ())
             .fragment_shader(frag.main_entry_point(), ())
             .viewports(vec![viewport])
