@@ -6,6 +6,7 @@ extern crate vulkano_win;
 extern crate winit;
 
 mod application;
+mod display;
 
 use application::Application;
 use flexi_logger::DeferredNow;
@@ -50,7 +51,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Logger::with_env_or_str("info")
         .format(multiline_format)
         .start()?;
-
     let app = Application::initialize()?;
     app.main_loop();
     Ok(())

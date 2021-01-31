@@ -1,185 +1,152 @@
 use std::error::Error;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use vulkano::buffer::cpu_pool::CpuBufferPool;
 use vulkano::command_buffer::{
     AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState,
 };
-use vulkano::device::{Device, Queue};
 use vulkano::format::ClearValue;
-use vulkano::framebuffer::{FramebufferAbstract, RenderPassAbstract};
-use vulkano::image::swapchain::SwapchainImage;
-use vulkano::instance::debug::DebugCallback;
-use vulkano::instance::Instance;
-use vulkano::pipeline::vertex::BufferlessVertices;
-use vulkano::swapchain::{acquire_next_image, Surface, Swapchain};
-use vulkano::sync::{GpuFuture, SharingMode};
-use vulkano_win::VkSurfaceBuild;
-use winit::dpi::LogicalSize;
+use vulkano::pipeline::GraphicsPipelineAbstract;
+use vulkano::swapchain::acquire_next_image;
+use vulkano::sync::GpuFuture;
 use winit::event::{Event, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
+use winit::event_loop::ControlFlow;
 
-mod device;
-mod instance;
-mod swapchain;
+use crate::display::Display;
+
 mod triangle_pipeline;
 
-use triangle_pipeline::GraphicsPipelineComplete;
+use triangle_pipeline::Vertex;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
 pub struct Application {
-    // vulkan library resources
-    _instance: Arc<Instance>,
-    _debug_callback: Option<DebugCallback>,
+    // vulkan display resources
+    display: Display,
 
-    // window/surface resources
-    surface: Arc<Surface<Window>>,
-    event_loop: Option<EventLoop<()>>,
-    pipeline: Arc<GraphicsPipelineComplete>,
-    _render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    swapchain: Arc<Swapchain<Window>>,
-    _swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
-    framebuffer_images: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 
-    // devices and queues
-    device: Arc<Device>,
-    graphics_queue: Arc<Queue>,
-    present_queue: Arc<Queue>,
+    // vertex buffers
+    buffer_pool: CpuBufferPool<[Vertex; 3]>,
 
-    // command buffers
-    command_buffers: Vec<Arc<AutoCommandBuffer>>,
+    start: Instant,
 }
 
 impl Application {
     pub fn initialize() -> DynResult<Self> {
-        let instance = instance::create_instance()?;
-        let debug_callback = instance::setup_debug_callback(&instance);
-
-        let event_loop: EventLoop<()> = EventLoop::new();
-        let surface = WindowBuilder::new()
-            .with_title("vulkan experiments")
-            .with_resizable(false)
-            .with_decorations(true)
-            .with_visible(false)
-            .with_inner_size(LogicalSize::new(1366, 768))
-            .build_vk_surface(&event_loop, instance.clone())?;
-
-        let physical_device =
-            device::pick_physical_device(&surface, &instance)?;
-        let (device, graphics_queue, present_queue) =
-            device::create_logical_device(&surface, &physical_device)?;
-        let (swapchain, swapchain_images) = swapchain::create_swap_chain(
-            &surface,
-            &physical_device,
-            &device,
-            &graphics_queue,
-            &present_queue,
-        )?;
-
-        let render_pass =
-            triangle_pipeline::create_render_pass(&device, swapchain.format())?;
-
+        let display = Display::create()?;
         let pipeline = triangle_pipeline::create_graphics_pipeline(
-            &device,
-            swapchain.dimensions(),
-            &render_pass,
+            &display.device,
+            display.swapchain.dimensions(),
+            &display.render_pass,
         )?;
+        let buffer_pool = CpuBufferPool::vertex_buffer(display.device.clone());
 
-        let framebuffer_images =
-            swapchain::create_framebuffers(&swapchain_images, &render_pass);
-
-        let mut app = Self {
-            // library resources
-            _instance: instance,
-            _debug_callback: debug_callback,
-
-            // window/surface resources
-            surface,
-            event_loop: Option::Some(event_loop),
+        Ok(Self {
+            display,
             pipeline,
-            _render_pass: render_pass,
-            swapchain,
-            _swapchain_images: swapchain_images,
-            framebuffer_images,
-
-            // devices and queues
-            device,
-            graphics_queue,
-            present_queue,
-
-            // command buffers
-            command_buffers: vec![],
-        };
-
-        app.build_command_buffers();
-
-        Ok(app)
+            buffer_pool,
+            start: Instant::now(),
+        })
     }
 
-    fn build_command_buffers(&mut self) {
-        let family = self.graphics_queue.family();
-        // TODO: add an actual command to this example
-        self.command_buffers = self
-            .framebuffer_images
-            .iter()
-            .map(|framebuffer_image| {
-                let vertices = BufferlessVertices {
-                    vertices: 3,
-                    instances: 1,
-                };
-                let mut builder =
-                    AutoCommandBufferBuilder::primary_simultaneous_use(
-                        self.device.clone(),
-                        family,
-                    )
-                    .unwrap();
+    fn build_command_buffer(
+        &self,
+        framebuffer_index: usize,
+    ) -> AutoCommandBuffer {
+        let family = self.display.graphics_queue.family();
+        let framebuffer_image =
+            &self.display.framebuffer_images[framebuffer_index];
 
-                builder
-                    .begin_render_pass(
-                        framebuffer_image.clone(),
-                        vulkano::command_buffer::SubpassContents::Inline,
-                        vec![ClearValue::Float([0.0, 0.0, 0.0, 1.0])],
-                    )
-                    .unwrap()
-                    .draw(
-                        self.pipeline.clone(),
-                        &DynamicState::none(),
-                        vertices,
-                        (),
-                        (),
-                    )
-                    .unwrap()
-                    .end_render_pass()
-                    .unwrap();
+        let vertices =
+            Arc::new(self.buffer_pool.next(self.triangle_vertices()).unwrap());
 
-                Arc::new(builder.build().unwrap())
-            })
-            .collect();
+        let mut builder = AutoCommandBufferBuilder::primary_simultaneous_use(
+            self.display.device.clone(),
+            family,
+        )
+        .unwrap();
+
+        builder
+            .begin_render_pass(
+                framebuffer_image.clone(),
+                vulkano::command_buffer::SubpassContents::Inline,
+                vec![ClearValue::Float([0.0, 0.0, 0.0, 1.0])],
+            )
+            .unwrap()
+            .draw(
+                self.pipeline.clone(),
+                &DynamicState::none(),
+                vec![vertices.clone()],
+                (),
+                (),
+            )
+            .unwrap()
+            .end_render_pass()
+            .unwrap();
+
+        builder.build().unwrap()
+    }
+
+    fn triangle_vertices(&self) -> [Vertex; 3] {
+        let time: Duration = Instant::now().duration_since(self.start);
+        let t = time.as_secs_f32();
+        let offset = (2.0 * 3.1415) / 3.0;
+
+        [
+            Vertex::new(
+                [(offset * 0.0 + t).cos(), (offset * 0.0 + t).sin()],
+                [1.0, 0.0, 0.0, 1.0],
+            ),
+            Vertex::new(
+                [(offset * 1.0 + t).cos(), (offset * 1.0 + t).sin()],
+                [1.0, 0.0, 0.0, 1.0],
+            ),
+            Vertex::new(
+                [(offset * 2.0 + t).cos(), (offset * 2.0 + t).sin()],
+                [1.0, 0.0, 0.0, 1.0],
+            ),
+        ]
     }
 
     /**
      * Render the screen.
      */
-    fn render(&self) {
-        let (image_index, _suboptimal, acquire_future) =
-            acquire_next_image(self.swapchain.clone(), None).unwrap();
+    fn render(&mut self) {
+        let (image_index, suboptimal, acquire_swapchain_future) =
+            acquire_next_image(self.display.swapchain.clone(), None).unwrap();
 
-        let command_buffer = self.command_buffers[image_index].clone();
+        let command_buffer = self.build_command_buffer(image_index);
 
-        let future = acquire_future
-            .then_execute(self.graphics_queue.clone(), command_buffer)
+        let future = acquire_swapchain_future
+            .then_execute(self.display.graphics_queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
-                self.present_queue.clone(),
-                self.swapchain.clone(),
+                self.display.present_queue.clone(),
+                self.display.swapchain.clone(),
                 image_index,
             )
             .then_signal_fence_and_flush()
             .unwrap();
 
+        // wait for the frame to finish
         future.wait(None).unwrap();
 
-        self.surface.window().request_redraw();
+        if suboptimal {
+            self.rebuild_swapchain_resources();
+        }
+    }
+
+    /// Rebuild the swapchain and command buffers
+    fn rebuild_swapchain_resources(&mut self) {
+        log::debug!("rebuilding swapchain resources");
+        self.display.rebuild_swapchain();
+        self.pipeline = triangle_pipeline::create_graphics_pipeline(
+            &self.display.device,
+            self.display.swapchain.dimensions(),
+            &self.display.render_pass,
+        )
+        .expect("unable to rebuild the triangle pipeline");
     }
 
     /**
@@ -187,11 +154,11 @@ impl Application {
      * window is closed.
      */
     pub fn main_loop(mut self) {
-        let event_loop = self.event_loop.take().unwrap();
+        let event_loop = self.display.event_loop.take().unwrap();
 
         // render once before showing the window so it's not garbage
         self.render();
-        self.surface.window().set_visible(true);
+        self.display.surface.window().set_visible(true);
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
@@ -204,9 +171,17 @@ impl Application {
                     *control_flow = ControlFlow::Exit;
                 }
 
+                Event::WindowEvent {
+                    event: WindowEvent::Resized(_),
+                    ..
+                } => {
+                    self.rebuild_swapchain_resources();
+                }
+
                 Event::MainEventsCleared => {
                     // redraw here
                     self.render();
+                    self.display.surface.window().request_redraw();
                 }
 
                 _ => (),
