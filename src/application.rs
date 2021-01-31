@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::sync::Arc;
 use vulkano::device::{Device, Queue};
+use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
@@ -15,6 +16,9 @@ use winit::window::{Window, WindowBuilder};
 mod device;
 mod instance;
 mod swapchain;
+mod triangle_pipeline;
+
+use triangle_pipeline::GraphicsPipelineComplete;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
@@ -26,6 +30,8 @@ pub struct Application {
     // window/surface resources
     surface: Arc<Surface<Window>>,
     event_loop: Option<EventLoop<()>>,
+    _pipeline: Arc<GraphicsPipelineComplete>,
+    _render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     _swapchain: Arc<Swapchain<Window>>,
     _swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
 
@@ -61,6 +67,15 @@ impl Application {
             &present_queue,
         )?;
 
+        let render_pass =
+            triangle_pipeline::create_render_pass(&device, swapchain.format())?;
+
+        let pipeline = triangle_pipeline::create_graphics_pipeline(
+            &device,
+            swapchain.dimensions(),
+            &render_pass,
+        )?;
+
         Ok(Self {
             // library resources
             _instance: instance,
@@ -69,6 +84,8 @@ impl Application {
             // window/surface resources
             surface,
             event_loop: Option::Some(event_loop),
+            _pipeline: pipeline,
+            _render_pass: render_pass,
             _swapchain: swapchain,
             _swapchain_images: swapchain_images,
 

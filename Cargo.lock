@@ -99,6 +99,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb6210b637171dfba4cda12e579ac6dc73f5165ad56133e5d72ef3131f320855"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "cocoa"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -910,6 +919,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6159e3c76cab06f6bc466244d43b35e77e9500cd685da87620addadc2a4c40b1"
 
 [[package]]
+name = "shaderc"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50b8aeaae10b9bda5cba66736a7e265f67698e912e1cc6a4678acba286e22be9"
+dependencies = [
+ "libc",
+ "shaderc-sys",
+]
+
+[[package]]
+name = "shaderc-sys"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b12d7c62d6732884c9dfab587503fa3a795b108df152415a89da23812d4737e"
+dependencies = [
+ "cmake",
+ "libc",
+]
+
+[[package]]
 name = "shared_library"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1047,6 +1076,7 @@ dependencies = [
  "flexi_logger",
  "log",
  "vulkano",
+ "vulkano-shaders",
  "vulkano-win",
  "winit",
 ]
@@ -1065,6 +1095,18 @@ dependencies = [
  "shared_library",
  "smallvec",
  "vk-sys",
+]
+
+[[package]]
+name = "vulkano-shaders"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67d1d768877bf11729725bebec9e642b853207357abb89c239be598f0a1ddfbf"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "shaderc",
+ "syn",
 ]
 
 [[package]]
