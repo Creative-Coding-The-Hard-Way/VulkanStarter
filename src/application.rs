@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::sync::Arc;
-use vulkano::buffer::BufferAccess;
+use std::time::{Duration, Instant};
+use vulkano::buffer::{cpu_access::CpuAccessibleBuffer, BufferAccess};
 use vulkano::command_buffer::{
     AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState,
 };
@@ -15,6 +16,8 @@ use crate::display::Display;
 
 mod triangle_pipeline;
 
+use triangle_pipeline::Vertex;
+
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
 pub struct Application {
@@ -27,7 +30,9 @@ pub struct Application {
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
 
     // vertex buffers
-    triangle_vertices: Arc<dyn BufferAccess + Send + Sync>,
+    triangle_vertices: Arc<CpuAccessibleBuffer<[Vertex; 3]>>,
+
+    start: Instant,
 }
 
 impl Application {
@@ -48,6 +53,7 @@ impl Application {
             pipeline,
             command_buffers: vec![],
             triangle_vertices,
+            start: Instant::now(),
         };
         app.build_command_buffers();
         Ok(app)
@@ -94,6 +100,21 @@ impl Application {
      * Render the screen.
      */
     fn render(&mut self) {
+        {
+            let time: Duration = Instant::now().duration_since(self.start);
+            let t = time.as_secs_f32();
+            let offset = (2.0 * 3.1415) / 3.0;
+
+            let mut write = self
+                .triangle_vertices
+                .write()
+                .expect("access triangle vertices");
+            write.iter_mut().enumerate().for_each(|(i, vertex)| {
+                let step = i as f32 * offset + t;
+                vertex.pos = [step.cos(), step.sin()];
+            });
+        }
+
         let (image_index, suboptimal, acquire_swapchain_future) =
             acquire_next_image(self.display.swapchain.clone(), None).unwrap();
 

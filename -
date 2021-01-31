@@ -27,7 +27,7 @@ impl Vertex {
 
 pub fn create_vertex_buffer(
     device: &Arc<Device>,
-) -> Arc<CpuAccessibleBuffer<[Vertex; 3]>> {
+) -> Arc<dyn BufferAccess + Send + Sync> {
     let buff = CpuAccessibleBuffer::from_data(
         device.clone(),
         BufferUsage::vertex_buffer(),
@@ -39,6 +39,14 @@ pub fn create_vertex_buffer(
         ],
     )
     .expect("unable to create a vertex buffer");
+
+    {
+        let mut write =
+            buff.write().expect("to lock the vertex buffer for writing");
+        write[0].pos = [0.0, 0.0];
+        write[0].color = [1.0, 0.0, 0.0, 1.0];
+        write = write.iter().map(|vertex| Vertex { ..*vertex }).collect();
+    }
 
     buff
 }
