@@ -5,6 +5,7 @@ use vulkano::framebuffer::{FramebufferAbstract, RenderPassAbstract};
 use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
+use vulkano::swapchain::{acquire_next_image, SwapchainAcquireFuture};
 use vulkano::swapchain::{Surface, Swapchain};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::LogicalSize;
@@ -44,7 +45,7 @@ impl Display {
         let event_loop: EventLoop<()> = EventLoop::new();
         let surface = WindowBuilder::new()
             .with_title("vulkan experiments")
-            .with_resizable(false)
+            .with_resizable(true)
             .with_decorations(true)
             .with_visible(false)
             .with_inner_size(LogicalSize::new(1366, 768))
@@ -86,5 +87,25 @@ impl Display {
             graphics_queue,
             present_queue,
         })
+    }
+
+    /// Rebuild the swapchain and dependent resources based on the the
+    /// window's current size.
+    pub fn rebuild_swapchain(&mut self) {
+        let size = self.surface.window().inner_size();
+        let (swapchain, swapchain_images) = self
+            .swapchain
+            .recreate_with_dimensions([size.width, size.height])
+            .expect("unable to recreate the swapchain!");
+        let render_pass =
+            swapchain::create_render_pass(&self.device, swapchain.format())
+                .expect("unable to recreate the render pass");
+        let framebuffer_images =
+            swapchain::create_framebuffers(&swapchain_images, &render_pass);
+
+        self.swapchain = swapchain;
+        self.swapchain_images = swapchain_images;
+        self.render_pass = render_pass;
+        self.framebuffer_images = framebuffer_images;
     }
 }

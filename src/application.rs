@@ -5,10 +5,11 @@ use vulkano::command_buffer::{
 };
 use vulkano::format::ClearValue;
 use vulkano::pipeline::vertex::BufferlessVertices;
-use vulkano::swapchain::acquire_next_image;
+use vulkano::swapchain::{acquire_next_image, SwapchainAcquireFuture};
 use vulkano::sync::GpuFuture;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
+use winit::window::Window;
 
 use crate::display::Display;
 
@@ -49,7 +50,7 @@ impl Application {
 
     fn build_command_buffers(&mut self) {
         let family = self.display.graphics_queue.family();
-        // TODO: add an actual command to this example
+
         self.command_buffers = self
             .display
             .framebuffer_images
@@ -92,13 +93,13 @@ impl Application {
     /**
      * Render the screen.
      */
-    fn render(&self) {
-        let (image_index, _suboptimal, acquire_future) =
+    fn render(&mut self) {
+        let (image_index, suboptimal, acquire_swapchain_future) =
             acquire_next_image(self.display.swapchain.clone(), None).unwrap();
 
         let command_buffer = self.command_buffers[image_index].clone();
 
-        let future = acquire_future
+        let future = acquire_swapchain_future
             .then_execute(self.display.graphics_queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
@@ -109,9 +110,25 @@ impl Application {
             .then_signal_fence_and_flush()
             .unwrap();
 
+        // wait for the frame to finish
         future.wait(None).unwrap();
 
-        self.display.surface.window().request_redraw();
+        if suboptimal {
+            self.rebuild_swapchain_resources();
+        }
+    }
+
+    /// Rebuild the swapchain and command buffers
+    fn rebuild_swapchain_resources(&mut self) {
+        log::debug!("rebuilding swapchain resources");
+        self.display.rebuild_swapchain();
+        self.pipeline = triangle_pipeline::create_graphics_pipeline(
+            &self.display.device,
+            self.display.swapchain.dimensions(),
+            &self.display.render_pass,
+        )
+        .expect("unable to rebuild the triangle pipeline");
+        self.build_command_buffers();
     }
 
     /**
@@ -136,9 +153,17 @@ impl Application {
                     *control_flow = ControlFlow::Exit;
                 }
 
+                Event::WindowEvent {
+                    event: WindowEvent::Resized(_),
+                    ..
+                } => {
+                    self.rebuild_swapchain_resources();
+                }
+
                 Event::MainEventsCleared => {
                     // redraw here
                     self.render();
+                    self.display.surface.window().request_redraw();
                 }
 
                 _ => (),
