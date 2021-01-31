@@ -5,7 +5,6 @@ use vulkano::framebuffer::{FramebufferAbstract, RenderPassAbstract};
 use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
-use vulkano::swapchain::{acquire_next_image, SwapchainAcquireFuture};
 use vulkano::swapchain::{Surface, Swapchain};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::LogicalSize;

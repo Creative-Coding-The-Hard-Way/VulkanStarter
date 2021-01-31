@@ -5,11 +5,10 @@ use vulkano::command_buffer::{
 };
 use vulkano::format::ClearValue;
 use vulkano::pipeline::vertex::BufferlessVertices;
-use vulkano::swapchain::{acquire_next_image, SwapchainAcquireFuture};
+use vulkano::swapchain::acquire_next_image;
 use vulkano::sync::GpuFuture;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
-use winit::window::Window;
 
 use crate::display::Display;
 
