@@ -9,6 +9,7 @@ use vulkano::framebuffer::{
 };
 use vulkano::image::{swapchain::SwapchainImage, ImageUsage};
 use vulkano::instance::PhysicalDevice;
+use vulkano::single_pass_renderpass;
 use vulkano::swapchain::{
     Capabilities, ColorSpace, CompositeAlpha, FullscreenExclusive, PresentMode,
     Surface, Swapchain,
@@ -16,7 +17,32 @@ use vulkano::swapchain::{
 use vulkano::sync::SharingMode;
 use winit::window::Window;
 
+type DynRenderPass = dyn RenderPassAbstract + Send + Sync;
+
 type DynResult<T> = Result<T, Box<dyn Error>>;
+
+pub fn create_render_pass(
+    device: &Arc<Device>,
+    color_format: Format,
+) -> DynResult<Arc<DynRenderPass>> {
+    let render_pass = single_pass_renderpass!(
+        device.clone(),
+        attachments: {
+            color: {
+                load: Clear,
+                store: Store,
+                format: color_format,
+                samples: 1,
+            }
+        },
+        pass: {
+            color: [color],
+            depth_stencil: {}
+        }
+    )?;
+
+    Ok(Arc::new(render_pass))
+}
 
 pub fn create_framebuffers(
     swapchain_images: &[Arc<SwapchainImage<Window>>],

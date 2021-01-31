@@ -6,6 +6,7 @@ extern crate vulkano_win;
 extern crate winit;
 
 mod application;
+mod display;
 
 use application::Application;
 use flexi_logger::DeferredNow;

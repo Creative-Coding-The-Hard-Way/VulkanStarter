@@ -1,17 +1,13 @@
 use std::error::Error;
 use std::sync::Arc;
+use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::Device;
-use vulkano::format::Format;
 use vulkano::framebuffer::{RenderPassAbstract, Subpass};
 use vulkano::pipeline::{
     vertex::BufferlessDefinition, viewport::Viewport, GraphicsPipeline,
 };
-use vulkano::single_pass_renderpass;
-
-use vulkano::descriptor::PipelineLayoutAbstract;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
-
 type DynRenderPass = dyn RenderPassAbstract + Send + Sync;
 
 // concrete type is required because we're using the BufferlessDefinition
@@ -105,27 +101,4 @@ pub fn create_graphics_pipeline(
     );
 
     Ok(pipeline)
-}
-
-pub fn create_render_pass(
-    device: &Arc<Device>,
-    color_format: Format,
-) -> DynResult<Arc<DynRenderPass>> {
-    let render_pass = single_pass_renderpass!(
-        device.clone(),
-        attachments: {
-            color: {
-                load: Clear,
-                store: Store,
-                format: color_format,
-                samples: 1,
-            }
-        },
-        pass: {
-            color: [color],
-            depth_stencil: {}
-        }
-    )?;
-
-    Ok(Arc::new(render_pass))
 }
