@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use vulkano::buffer::{cpu_access::CpuAccessibleBuffer, BufferAccess};
+use vulkano::buffer::cpu_pool::CpuBufferPool;
 use vulkano::command_buffer::{
     AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState,
 };
@@ -26,11 +26,8 @@ pub struct Application {
 
     pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 
-    // command buffers
-    command_buffers: Vec<Arc<AutoCommandBuffer>>,
-
     // vertex buffers
-    triangle_vertices: Arc<CpuAccessibleBuffer<[Vertex; 3]>>,
+    buffer_pool: CpuBufferPool<[Vertex; 3]>,
 
     start: Instant,
 }
@@ -38,87 +35,88 @@ pub struct Application {
 impl Application {
     pub fn initialize() -> DynResult<Self> {
         let display = Display::create()?;
-
         let pipeline = triangle_pipeline::create_graphics_pipeline(
             &display.device,
             display.swapchain.dimensions(),
             &display.render_pass,
         )?;
+        let buffer_pool = CpuBufferPool::vertex_buffer(display.device.clone());
 
-        let triangle_vertices =
-            triangle_pipeline::create_vertex_buffer(&display.device);
-
-        let mut app = Self {
+        Ok(Self {
             display,
             pipeline,
-            command_buffers: vec![],
-            triangle_vertices,
+            buffer_pool,
             start: Instant::now(),
-        };
-        app.build_command_buffers();
-        Ok(app)
+        })
     }
 
-    fn build_command_buffers(&mut self) {
+    fn build_command_buffer(
+        &self,
+        framebuffer_index: usize,
+    ) -> AutoCommandBuffer {
         let family = self.display.graphics_queue.family();
-        self.command_buffers = self
-            .display
-            .framebuffer_images
-            .iter()
-            .map(|framebuffer_image| {
-                let mut builder =
-                    AutoCommandBufferBuilder::primary_simultaneous_use(
-                        self.display.device.clone(),
-                        family,
-                    )
-                    .unwrap();
+        let framebuffer_image =
+            &self.display.framebuffer_images[framebuffer_index];
 
-                builder
-                    .begin_render_pass(
-                        framebuffer_image.clone(),
-                        vulkano::command_buffer::SubpassContents::Inline,
-                        vec![ClearValue::Float([0.0, 0.0, 0.0, 1.0])],
-                    )
-                    .unwrap()
-                    .draw(
-                        self.pipeline.clone(),
-                        &DynamicState::none(),
-                        vec![self.triangle_vertices.clone()],
-                        (),
-                        (),
-                    )
-                    .unwrap()
-                    .end_render_pass()
-                    .unwrap();
+        let vertices =
+            Arc::new(self.buffer_pool.next(self.triangle_vertices()).unwrap());
 
-                Arc::new(builder.build().unwrap())
-            })
-            .collect();
+        let mut builder = AutoCommandBufferBuilder::primary_simultaneous_use(
+            self.display.device.clone(),
+            family,
+        )
+        .unwrap();
+
+        builder
+            .begin_render_pass(
+                framebuffer_image.clone(),
+                vulkano::command_buffer::SubpassContents::Inline,
+                vec![ClearValue::Float([0.0, 0.0, 0.0, 1.0])],
+            )
+            .unwrap()
+            .draw(
+                self.pipeline.clone(),
+                &DynamicState::none(),
+                vec![vertices.clone()],
+                (),
+                (),
+            )
+            .unwrap()
+            .end_render_pass()
+            .unwrap();
+
+        builder.build().unwrap()
+    }
+
+    fn triangle_vertices(&self) -> [Vertex; 3] {
+        let time: Duration = Instant::now().duration_since(self.start);
+        let t = time.as_secs_f32();
+        let offset = (2.0 * 3.1415) / 3.0;
+
+        [
+            Vertex::new(
+                [(offset * 0.0 + t).cos(), (offset * 0.0 + t).sin()],
+                [1.0, 0.0, 0.0, 1.0],
+            ),
+            Vertex::new(
+                [(offset * 1.0 + t).cos(), (offset * 1.0 + t).sin()],
+                [1.0, 0.0, 0.0, 1.0],
+            ),
+            Vertex::new(
+                [(offset * 2.0 + t).cos(), (offset * 2.0 + t).sin()],
+                [1.0, 0.0, 0.0, 1.0],
+            ),
+        ]
     }
 
     /**
      * Render the screen.
      */
     fn render(&mut self) {
-        {
-            let time: Duration = Instant::now().duration_since(self.start);
-            let t = time.as_secs_f32();
-            let offset = (2.0 * 3.1415) / 3.0;
-
-            let mut write = self
-                .triangle_vertices
-                .write()
-                .expect("access triangle vertices");
-            write.iter_mut().enumerate().for_each(|(i, vertex)| {
-                let step = i as f32 * offset + t;
-                vertex.pos = [step.cos(), step.sin()];
-            });
-        }
-
         let (image_index, suboptimal, acquire_swapchain_future) =
             acquire_next_image(self.display.swapchain.clone(), None).unwrap();
 
-        let command_buffer = self.command_buffers[image_index].clone();
+        let command_buffer = self.build_command_buffer(image_index);
 
         let future = acquire_swapchain_future
             .then_execute(self.display.graphics_queue.clone(), command_buffer)
@@ -149,7 +147,6 @@ impl Application {
             &self.display.render_pass,
         )
         .expect("unable to rebuild the triangle pipeline");
-        self.build_command_buffers();
     }
 
     /**

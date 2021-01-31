@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::sync::Arc;
+use vulkano::buffer::CpuBufferPool;
 use vulkano::buffer::{BufferAccess, BufferUsage, CpuAccessibleBuffer};
 use vulkano::device::Device;
 use vulkano::framebuffer::{RenderPassAbstract, Subpass};
