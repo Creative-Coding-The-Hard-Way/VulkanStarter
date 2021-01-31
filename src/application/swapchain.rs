@@ -4,6 +4,9 @@ use std::error::Error;
 use std::sync::Arc;
 use vulkano::device::{Device, Queue};
 use vulkano::format::Format;
+use vulkano::framebuffer::{
+    Framebuffer, FramebufferAbstract, RenderPassAbstract,
+};
 use vulkano::image::{swapchain::SwapchainImage, ImageUsage};
 use vulkano::instance::PhysicalDevice;
 use vulkano::swapchain::{
@@ -14,6 +17,25 @@ use vulkano::sync::SharingMode;
 use winit::window::Window;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
+
+pub fn create_framebuffers(
+    swapchain_images: &[Arc<SwapchainImage<Window>>],
+    render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
+) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+    swapchain_images
+        .iter()
+        .map(|image| {
+            let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
+                Framebuffer::start(render_pass.clone())
+                    .add(image.clone())
+                    .unwrap()
+                    .build()
+                    .unwrap(),
+            );
+            fba
+        })
+        .collect::<Vec<_>>()
+}
 
 /// Construct a swapchain and it's owned images
 pub fn create_swap_chain(

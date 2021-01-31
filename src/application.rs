@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::sync::Arc;
 use vulkano::device::{Device, Queue};
-use vulkano::framebuffer::RenderPassAbstract;
+use vulkano::framebuffer::{FramebufferAbstract, RenderPassAbstract};
 use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
@@ -34,6 +34,7 @@ pub struct Application {
     _render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     _swapchain: Arc<Swapchain<Window>>,
     _swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
+    _framebuffer_images: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
     // devices and queues
     _device: Arc<Device>,
@@ -76,6 +77,9 @@ impl Application {
             &render_pass,
         )?;
 
+        let framebuffers =
+            swapchain::create_framebuffers(&swapchain_images, &render_pass);
+
         Ok(Self {
             // library resources
             _instance: instance,
@@ -88,6 +92,7 @@ impl Application {
             _render_pass: render_pass,
             _swapchain: swapchain,
             _swapchain_images: swapchain_images,
+            _framebuffer_images: framebuffers,
 
             // devices and queues
             _device: device,
