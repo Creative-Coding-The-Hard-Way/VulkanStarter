@@ -10,8 +10,8 @@ use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
 use vulkano::pipeline::vertex::BufferlessVertices;
-use vulkano::swapchain::Surface;
-use vulkano::swapchain::Swapchain;
+use vulkano::swapchain::{acquire_next_image, Surface, Swapchain};
+use vulkano::sync::{GpuFuture, SharingMode};
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
@@ -37,14 +37,14 @@ pub struct Application {
     event_loop: Option<EventLoop<()>>,
     pipeline: Arc<GraphicsPipelineComplete>,
     _render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    _swapchain: Arc<Swapchain<Window>>,
+    swapchain: Arc<Swapchain<Window>>,
     _swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
     framebuffer_images: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
     // devices and queues
     device: Arc<Device>,
     graphics_queue: Arc<Queue>,
-    _present_queue: Arc<Queue>,
+    present_queue: Arc<Queue>,
 
     // command buffers
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
@@ -60,7 +60,7 @@ impl Application {
             .with_title("vulkan experiments")
             .with_resizable(false)
             .with_decorations(true)
-            .with_visible(true)
+            .with_visible(false)
             .with_inner_size(LogicalSize::new(1366, 768))
             .build_vk_surface(&event_loop, instance.clone())?;
 
@@ -98,14 +98,14 @@ impl Application {
             event_loop: Option::Some(event_loop),
             pipeline,
             _render_pass: render_pass,
-            _swapchain: swapchain,
+            swapchain,
             _swapchain_images: swapchain_images,
             framebuffer_images,
 
             // devices and queues
             device,
             graphics_queue,
-            _present_queue: present_queue,
+            present_queue,
 
             // command buffers
             command_buffers: vec![],
@@ -161,6 +161,24 @@ impl Application {
      * Render the screen.
      */
     fn render(&self) {
+        let (image_index, _suboptimal, acquire_future) =
+            acquire_next_image(self.swapchain.clone(), None).unwrap();
+
+        let command_buffer = self.command_buffers[image_index].clone();
+
+        let future = acquire_future
+            .then_execute(self.graphics_queue.clone(), command_buffer)
+            .unwrap()
+            .then_swapchain_present(
+                self.present_queue.clone(),
+                self.swapchain.clone(),
+                image_index,
+            )
+            .then_signal_fence_and_flush()
+            .unwrap();
+
+        future.wait(None).unwrap();
+
         self.surface.window().request_redraw();
     }
 
@@ -170,6 +188,10 @@ impl Application {
      */
     pub fn main_loop(mut self) {
         let event_loop = self.event_loop.take().unwrap();
+
+        // render once before showing the window so it's not garbage
+        self.render();
+        self.surface.window().set_visible(true);
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
