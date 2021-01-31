@@ -1,10 +1,15 @@
 use std::error::Error;
 use std::sync::Arc;
+use vulkano::command_buffer::{
+    AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState,
+};
 use vulkano::device::{Device, Queue};
+use vulkano::format::ClearValue;
 use vulkano::framebuffer::{FramebufferAbstract, RenderPassAbstract};
 use vulkano::image::swapchain::SwapchainImage;
 use vulkano::instance::debug::DebugCallback;
 use vulkano::instance::Instance;
+use vulkano::pipeline::vertex::BufferlessVertices;
 use vulkano::swapchain::Surface;
 use vulkano::swapchain::Swapchain;
 use vulkano_win::VkSurfaceBuild;
@@ -30,16 +35,19 @@ pub struct Application {
     // window/surface resources
     surface: Arc<Surface<Window>>,
     event_loop: Option<EventLoop<()>>,
-    _pipeline: Arc<GraphicsPipelineComplete>,
+    pipeline: Arc<GraphicsPipelineComplete>,
     _render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     _swapchain: Arc<Swapchain<Window>>,
     _swapchain_images: Vec<Arc<SwapchainImage<Window>>>,
-    _framebuffer_images: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    framebuffer_images: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
     // devices and queues
-    _device: Arc<Device>,
-    _graphics_queue: Arc<Queue>,
+    device: Arc<Device>,
+    graphics_queue: Arc<Queue>,
     _present_queue: Arc<Queue>,
+
+    // command buffers
+    command_buffers: Vec<Arc<AutoCommandBuffer>>,
 }
 
 impl Application {
@@ -77,10 +85,10 @@ impl Application {
             &render_pass,
         )?;
 
-        let framebuffers =
+        let framebuffer_images =
             swapchain::create_framebuffers(&swapchain_images, &render_pass);
 
-        Ok(Self {
+        let mut app = Self {
             // library resources
             _instance: instance,
             _debug_callback: debug_callback,
@@ -88,17 +96,65 @@ impl Application {
             // window/surface resources
             surface,
             event_loop: Option::Some(event_loop),
-            _pipeline: pipeline,
+            pipeline,
             _render_pass: render_pass,
             _swapchain: swapchain,
             _swapchain_images: swapchain_images,
-            _framebuffer_images: framebuffers,
+            framebuffer_images,
 
             // devices and queues
-            _device: device,
-            _graphics_queue: graphics_queue,
+            device,
+            graphics_queue,
             _present_queue: present_queue,
-        })
+
+            // command buffers
+            command_buffers: vec![],
+        };
+
+        app.build_command_buffers();
+
+        Ok(app)
+    }
+
+    fn build_command_buffers(&mut self) {
+        let family = self.graphics_queue.family();
+        // TODO: add an actual command to this example
+        self.command_buffers = self
+            .framebuffer_images
+            .iter()
+            .map(|framebuffer_image| {
+                let vertices = BufferlessVertices {
+                    vertices: 3,
+                    instances: 1,
+                };
+                let mut builder =
+                    AutoCommandBufferBuilder::primary_simultaneous_use(
+                        self.device.clone(),
+                        family,
+                    )
+                    .unwrap();
+
+                builder
+                    .begin_render_pass(
+                        framebuffer_image.clone(),
+                        vulkano::command_buffer::SubpassContents::Inline,
+                        vec![ClearValue::Float([0.0, 0.0, 0.0, 1.0])],
+                    )
+                    .unwrap()
+                    .draw(
+                        self.pipeline.clone(),
+                        &DynamicState::none(),
+                        vertices,
+                        (),
+                        (),
+                    )
+                    .unwrap()
+                    .end_render_pass()
+                    .unwrap();
+
+                Arc::new(builder.build().unwrap())
+            })
+            .collect();
     }
 
     /**
