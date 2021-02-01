@@ -1075,6 +1075,7 @@ version = "0.1.0"
 dependencies = [
  "flexi_logger",
  "log",
+ "vk-sys",
  "vulkano",
  "vulkano-shaders",
  "vulkano-win",

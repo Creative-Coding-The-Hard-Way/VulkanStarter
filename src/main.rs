@@ -4,6 +4,7 @@ extern crate vulkano;
 extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
+extern crate vk_sys;
 
 mod application;
 mod display;

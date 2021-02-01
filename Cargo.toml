@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 flexi_logger = "0.17.1"
 log = "0.4.13"
+vk-sys = "0.5.3"
 vulkano = "*"
 vulkano-shaders = "0.20.0"
 vulkano-win = "0.20.0"

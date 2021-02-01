@@ -7,6 +7,7 @@ use vulkano::format::Format;
 use vulkano::framebuffer::{
     Framebuffer, FramebufferAbstract, RenderPassAbstract,
 };
+use vulkano::image::AttachmentImage;
 use vulkano::image::{swapchain::SwapchainImage, ImageUsage};
 use vulkano::instance::PhysicalDevice;
 use vulkano::single_pass_renderpass;
@@ -21,13 +22,25 @@ type DynRenderPass = dyn RenderPassAbstract + Send + Sync;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
+/// Build a render pass which uses the maximum multisampling level supported
+/// by this device.
 pub fn create_render_pass(
     device: &Arc<Device>,
     color_format: Format,
 ) -> DynResult<Arc<DynRenderPass>> {
+    let samples = pick_sample_count(&device.physical_device());
+    log::debug!("framebuffer samples {}", samples);
+
     let render_pass = single_pass_renderpass!(
         device.clone(),
         attachments: {
+            intermediary: {
+                load: Clear,
+                store: DontCare,
+                format: color_format,
+                samples: 8,
+            },
+
             color: {
                 load: Clear,
                 store: Store,
@@ -36,23 +49,52 @@ pub fn create_render_pass(
             }
         },
         pass: {
-            color: [color],
+            color: [intermediary],
             depth_stencil: {}
+            resolve: [color]
         }
     )?;
 
     Ok(Arc::new(render_pass))
 }
 
+/// Pick the largest supported sampling count for this device
+fn pick_sample_count(physical_device: &PhysicalDevice) -> u32 {
+    let counts = physical_device.limits().framebuffer_color_sample_counts();
+    [
+        (vk_sys::SAMPLE_COUNT_64_BIT, 64),
+        (vk_sys::SAMPLE_COUNT_32_BIT, 32),
+        (vk_sys::SAMPLE_COUNT_16_BIT, 16),
+        (vk_sys::SAMPLE_COUNT_8_BIT, 8),
+        (vk_sys::SAMPLE_COUNT_4_BIT, 4),
+        (vk_sys::SAMPLE_COUNT_2_BIT, 2),
+    ]
+    .iter()
+    .find(|(mask, _)| counts & *mask > 0)
+    .map(|(_, samples)| *samples)
+    .unwrap_or(1)
+}
+
 pub fn create_framebuffers(
+    device: &Arc<Device>,
+    color_format: Format,
     swapchain_images: &[Arc<SwapchainImage<Window>>],
     render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
 ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
     swapchain_images
         .iter()
         .map(|image| {
+            let intermediary = AttachmentImage::transient_multisampled(
+                device.clone(),
+                image.dimensions(),
+                render_pass.num_samples(0).unwrap(),
+                color_format,
+            )
+            .unwrap();
             let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
                 Framebuffer::start(render_pass.clone())
+                    .add(intermediary.clone())
+                    .unwrap()
                     .add(image.clone())
                     .unwrap()
                     .build()

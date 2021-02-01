@@ -71,7 +71,10 @@ impl Application {
             .begin_render_pass(
                 framebuffer_image.clone(),
                 vulkano::command_buffer::SubpassContents::Inline,
-                vec![ClearValue::Float([0.0, 0.0, 0.0, 1.0])],
+                vec![
+                    ClearValue::Float([0.0, 0.0, 0.0, 1.0]),
+                    ClearValue::Float([0.0, 0.0, 0.0, 1.0]),
+                ],
             )
             .unwrap()
             .draw(
@@ -90,7 +93,7 @@ impl Application {
 
     fn triangle_vertices(&self) -> [Vertex; 3] {
         let time: Duration = Instant::now().duration_since(self.start);
-        let t = time.as_secs_f32();
+        let t = time.as_secs_f32() / 10.0;
         let offset = (2.0 * 3.1415) / 3.0;
 
         [

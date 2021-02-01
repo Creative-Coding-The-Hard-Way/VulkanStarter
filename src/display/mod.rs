@@ -65,8 +65,12 @@ impl Display {
         let render_pass =
             swapchain::create_render_pass(&device, swapchain.format())?;
 
-        let framebuffer_images =
-            swapchain::create_framebuffers(&swapchain_images, &render_pass);
+        let framebuffer_images = swapchain::create_framebuffers(
+            &device,
+            swapchain.format(),
+            &swapchain_images,
+            &render_pass,
+        );
 
         Ok(Display {
             // library resources
@@ -99,8 +103,12 @@ impl Display {
         let render_pass =
             swapchain::create_render_pass(&self.device, swapchain.format())
                 .expect("unable to recreate the render pass");
-        let framebuffer_images =
-            swapchain::create_framebuffers(&swapchain_images, &render_pass);
+        let framebuffer_images = swapchain::create_framebuffers(
+            &self.device,
+            swapchain.format(),
+            &swapchain_images,
+            &render_pass,
+        );
 
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
