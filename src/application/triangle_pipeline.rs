@@ -1,7 +1,5 @@
-use std::error::Error;
+use anyhow::{Context, Result};
 use std::sync::Arc;
-use vulkano::buffer::CpuBufferPool;
-use vulkano::buffer::{BufferAccess, BufferUsage, CpuAccessibleBuffer};
 use vulkano::device::Device;
 use vulkano::framebuffer::{RenderPassAbstract, Subpass};
 use vulkano::impl_vertex;
@@ -9,7 +7,6 @@ use vulkano::pipeline::{
     viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract,
 };
 
-type DynResult<T> = Result<T, Box<dyn Error>>;
 type DynRenderPass = dyn RenderPassAbstract + Send + Sync;
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -26,29 +23,11 @@ impl Vertex {
     }
 }
 
-pub fn create_vertex_buffer(
-    device: &Arc<Device>,
-) -> Arc<CpuAccessibleBuffer<[Vertex; 3]>> {
-    let buff = CpuAccessibleBuffer::from_data(
-        device.clone(),
-        BufferUsage::vertex_buffer(),
-        false,
-        [
-            Vertex::new([0.0, -0.5], [1.0, 1.0, 1.0, 1.0]),
-            Vertex::new([0.5, 0.5], [1.0, 1.0, 1.0, 1.0]),
-            Vertex::new([-0.5, 0.5], [1.0, 1.0, 1.0, 1.0]),
-        ],
-    )
-    .expect("unable to create a vertex buffer");
-
-    buff
-}
-
 pub fn create_graphics_pipeline(
     device: &Arc<Device>,
     swapchain_extent: [u32; 2],
     render_pass: &Arc<DynRenderPass>,
-) -> DynResult<Arc<dyn GraphicsPipelineAbstract + Send + Sync>> {
+) -> Result<Arc<dyn GraphicsPipelineAbstract + Send + Sync>> {
     mod vertex_shader {
         //
         vulkano_shaders::shader! {
@@ -87,8 +66,10 @@ pub fn create_graphics_pipeline(
         }
     }
 
-    let vert = vertex_shader::Shader::load(device.clone())?;
-    let frag = fragment_shader::Shader::load(device.clone())?;
+    let vert = vertex_shader::Shader::load(device.clone())
+        .context("unable to load the vertex shader")?;
+    let frag = fragment_shader::Shader::load(device.clone())
+        .context("unable to load the fragment shader")?;
 
     let dimensions = [swapchain_extent[0] as f32, swapchain_extent[1] as f32];
     let viewport = Viewport {
@@ -97,26 +78,25 @@ pub fn create_graphics_pipeline(
         depth_range: 0.0..1.0,
     };
 
-    let pipeline = Arc::new(
-        GraphicsPipeline::start()
-            .vertex_input_single_buffer::<Vertex>()
-            .vertex_shader(vert.main_entry_point(), ())
-            .fragment_shader(frag.main_entry_point(), ())
-            .viewports(vec![viewport])
-            .depth_clamp(false)
-            .polygon_mode_fill()
-            .line_width(1.0)
-            .cull_mode_disabled()
-            .front_face_clockwise()
-            .depth_write(false)
-            .sample_shading_disabled()
-            .blend_pass_through()
-            .render_pass(
-                Subpass::from(render_pass.clone(), 0)
-                    .ok_or("could not create renderpass subpass!")?,
-            )
-            .build(device.clone())?,
-    );
+    let pipeline = GraphicsPipeline::start()
+        .vertex_input_single_buffer::<Vertex>()
+        .vertex_shader(vert.main_entry_point(), ())
+        .fragment_shader(frag.main_entry_point(), ())
+        .viewports(vec![viewport])
+        .depth_clamp(false)
+        .polygon_mode_fill()
+        .line_width(1.0)
+        .cull_mode_disabled()
+        .front_face_clockwise()
+        .depth_write(false)
+        .sample_shading_disabled()
+        .blend_pass_through()
+        .render_pass(
+            Subpass::from(render_pass.clone(), 0)
+                .context("could not create the pipeline subpass")?,
+        )
+        .build(device.clone())
+        .context("could not create the graphics pipeline")?;
 
-    Ok(pipeline)
+    Ok(Arc::new(pipeline))
 }

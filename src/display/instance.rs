@@ -1,24 +1,23 @@
+use anyhow::{Context, Result};
 use log;
-use std::error::Error;
 use std::sync::Arc;
 use vulkano::instance::debug::{DebugCallback, MessageSeverity, MessageType};
 use vulkano::instance::{
     layers_list, ApplicationInfo, Instance, InstanceExtensions, Version,
 };
 
-type DynResult<T> = Result<T, Box<dyn Error>>;
-
 const VALIDATION_LAYERS: &[&str] = &["VK_LAYER_KHRONOS_validation"];
 const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 
-pub fn create_instance() -> DynResult<Arc<Instance>> {
+pub fn create_instance() -> Result<Arc<Instance>> {
     if ENABLE_VALIDATION_LAYERS && !check_debug_layers()? {
         log::warn!(
             "validation layers requested, but they were not all avialable!"
         )
     }
 
-    let supported_extensions = InstanceExtensions::supported_by_core()?;
+    let supported_extensions = InstanceExtensions::supported_by_core()
+        .context("unable to get supported instance extensions")?;
     let required_extensions = required_extensions();
     log::info!(
         "supported extensions \n {}",
@@ -51,7 +50,7 @@ pub fn create_instance() -> DynResult<Arc<Instance>> {
     Ok(Instance::new(Some(&app_info), &required_extensions, None)?)
 }
 
-fn check_debug_layers() -> DynResult<bool> {
+fn check_debug_layers() -> Result<bool> {
     let available_layers: Vec<String> = layers_list()?
         .map(|layer| layer.name().to_owned())
         .collect();

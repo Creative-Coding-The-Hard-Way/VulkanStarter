@@ -1,6 +1,6 @@
+use anyhow::{Context, Result};
 use log;
 use std::cmp::{max, min};
-use std::error::Error;
 use std::sync::Arc;
 use vulkano::device::{Device, Queue};
 use vulkano::format::Format;
@@ -20,14 +20,12 @@ use winit::window::Window;
 
 type DynRenderPass = dyn RenderPassAbstract + Send + Sync;
 
-type DynResult<T> = Result<T, Box<dyn Error>>;
-
 /// Build a render pass which uses the maximum multisampling level supported
 /// by this device.
 pub fn create_render_pass(
     device: &Arc<Device>,
     color_format: Format,
-) -> DynResult<Arc<DynRenderPass>> {
+) -> Result<Arc<DynRenderPass>> {
     let samples = pick_sample_count(&device.physical_device());
     log::debug!("framebuffer samples {}", samples);
 
@@ -38,7 +36,7 @@ pub fn create_render_pass(
                 load: Clear,
                 store: DontCare,
                 format: color_format,
-                samples: 8,
+                samples: samples,
             },
 
             color: {
@@ -53,7 +51,8 @@ pub fn create_render_pass(
             depth_stencil: {}
             resolve: [color]
         }
-    )?;
+    )
+    .context("unable to create renderpass")?;
 
     Ok(Arc::new(render_pass))
 }
@@ -112,7 +111,7 @@ pub fn create_swap_chain(
     logical_device: &Arc<Device>,
     graphics_queue: &Arc<Queue>,
     present_queue: &Arc<Queue>,
-) -> DynResult<(Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>)> {
+) -> Result<(Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>)> {
     let capabilities = surface.capabilities(*physical_device)?;
     let swap_format = choose_swap_surface_format(&capabilities);
     let swap_present_mode = choose_swap_present_mode(&capabilities);
@@ -140,7 +139,8 @@ pub fn create_swap_chain(
         FullscreenExclusive::AppControlled,
         false,
         swap_format.1,
-    )?;
+    )
+    .context("unable to build swapchain")?;
 
     Ok((swapchain, images))
 }
