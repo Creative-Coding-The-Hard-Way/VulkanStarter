@@ -1,4 +1,4 @@
-use std::error::Error;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
 use vulkano::instance::{Instance, PhysicalDevice};
@@ -9,13 +9,11 @@ mod queue_family_indices;
 
 use queue_family_indices::QueueFamilyIndices;
 
-type DynResult<T> = Result<T, Box<dyn Error>>;
-
 /// Create a logical device and command queues
 pub fn create_logical_device(
     surface: &Arc<Surface<Window>>,
     physical_device: &PhysicalDevice,
-) -> DynResult<(Arc<Device>, Arc<Queue>, Arc<Queue>)> {
+) -> Result<(Arc<Device>, Arc<Queue>, Arc<Queue>)> {
     let indices = QueueFamilyIndices::find(surface, &physical_device)?;
     let unique_indices = indices.unique_indices();
 
@@ -29,7 +27,8 @@ pub fn create_logical_device(
         &Features::none(),
         &required_device_extensions(),
         families,
-    )?;
+    )
+    .context("unable to build logical device")?;
 
     let (graphics_queue, present_queue) = indices.take_queues(queues)?;
 
@@ -40,7 +39,7 @@ pub fn create_logical_device(
 pub fn pick_physical_device<'a>(
     surface: &Arc<Surface<Window>>,
     instance: &'a Arc<Instance>,
-) -> Result<PhysicalDevice<'a>, String> {
+) -> Result<PhysicalDevice<'a>> {
     let devices: Vec<PhysicalDevice> =
         PhysicalDevice::enumerate(&instance).collect();
 
@@ -54,7 +53,7 @@ pub fn pick_physical_device<'a>(
         .iter()
         .find(|device| is_device_suitable(&surface, &device))
         .cloned()
-        .ok_or("unable to find a physical device".to_owned())
+        .context("unable to pick a suitable physical device")
 }
 
 /// Find a device which suits the application's needs

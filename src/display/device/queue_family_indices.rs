@@ -1,11 +1,9 @@
-use std::error::Error;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::device::{Queue, QueuesIter};
 use vulkano::instance::PhysicalDevice;
 use vulkano::swapchain::Surface;
 use winit::window::Window;
-
-type DynResult<T> = Result<T, Box<dyn Error>>;
 
 pub struct QueueFamilyIndices {
     graphics_family: usize,
@@ -17,7 +15,7 @@ impl QueueFamilyIndices {
     pub fn find(
         surface: &Arc<Surface<Window>>,
         device: &PhysicalDevice,
-    ) -> DynResult<Self> {
+    ) -> Result<Self> {
         let mut graphics = None;
         let mut present = None;
 
@@ -34,15 +32,13 @@ impl QueueFamilyIndices {
             }
         }
 
-        let indices = graphics
+        graphics
             .zip(present)
             .map(|(graphics_family, present_family)| Self {
                 graphics_family,
                 present_family,
             })
-            .ok_or("unable to find all required queue families for device")?;
-
-        Ok(indices)
+            .context("unable to find all required queue families for this physical device")
     }
 
     /// Return the set of unique queue family indices
@@ -59,14 +55,17 @@ impl QueueFamilyIndices {
     pub fn take_queues(
         &self,
         mut queues: QueuesIter,
-    ) -> DynResult<(Arc<Queue>, Arc<Queue>)> {
-        let graphics_queue =
-            queues.next().ok_or("no graphics queue available")?;
+    ) -> Result<(Arc<Queue>, Arc<Queue>)> {
+        let graphics_queue = queues
+            .next()
+            .context("could not find a graphics queue for this device")?;
 
         let present_queue = if self.is_same_queue() {
             graphics_queue.clone()
         } else {
-            queues.next().ok_or("no present queue available")?
+            queues.next().context(
+                "could not find a presentation queue for this device",
+            )?
         };
 
         Ok((graphics_queue, present_queue))

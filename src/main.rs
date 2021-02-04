@@ -1,11 +1,11 @@
 mod application;
 mod display;
 
+use anyhow::Result;
 use application::Application;
 use flexi_logger::DeferredNow;
 use flexi_logger::Logger;
 use flexi_logger::Record;
-use std::error::Error;
 use std::fmt::Write as FmtWrite;
 
 /// A human-readable formatter for multiline logs with flexi logger.
@@ -40,11 +40,11 @@ pub fn multiline_format(
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     Logger::with_env_or_str("info")
         .format(multiline_format)
         .start()?;
     let app = Application::initialize()?;
-    app.main_loop();
+    app.main_loop()?;
     Ok(())
 }

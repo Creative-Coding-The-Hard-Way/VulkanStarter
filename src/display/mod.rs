@@ -1,4 +1,4 @@
-use std::error::Error;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::device::{Device, Queue};
 use vulkano::framebuffer::{FramebufferAbstract, RenderPassAbstract};
@@ -14,8 +14,6 @@ use winit::window::{Window, WindowBuilder};
 mod device;
 mod instance;
 mod swapchain;
-
-type DynResult<T> = Result<T, Box<dyn Error>>;
 
 pub struct Display {
     // vulkan library resources
@@ -37,8 +35,9 @@ pub struct Display {
 }
 
 impl Display {
-    pub fn create() -> DynResult<Self> {
-        let instance = instance::create_instance()?;
+    pub fn create() -> Result<Self> {
+        let instance = instance::create_instance()
+            .context("unable to create the vulkan instance")?;
         let debug_callback = instance::setup_debug_callback(&instance);
 
         let event_loop: EventLoop<()> = EventLoop::new();
@@ -48,10 +47,12 @@ impl Display {
             .with_decorations(true)
             .with_visible(false)
             .with_inner_size(LogicalSize::new(1366, 768))
-            .build_vk_surface(&event_loop, instance.clone())?;
+            .build_vk_surface(&event_loop, instance.clone())
+            .context("unable to build the main vulkan window")?;
 
         let physical_device =
             device::pick_physical_device(&surface, &instance)?;
+
         let (device, graphics_queue, present_queue) =
             device::create_logical_device(&surface, &physical_device)?;
         let (swapchain, swapchain_images) = swapchain::create_swap_chain(

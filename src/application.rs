@@ -1,4 +1,4 @@
-use std::error::Error;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vulkano::buffer::cpu_pool::CpuBufferPool;
@@ -18,8 +18,6 @@ mod triangle_pipeline;
 
 use triangle_pipeline::Vertex;
 
-type DynResult<T> = Result<T, Box<dyn Error>>;
-
 pub struct Application {
     // vulkan display resources
     display: Display,
@@ -33,8 +31,9 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn initialize() -> DynResult<Self> {
-        let display = Display::create()?;
+    pub fn initialize() -> Result<Self> {
+        let display =
+            Display::create().context("unable to create the display")?;
         let pipeline = triangle_pipeline::create_graphics_pipeline(
             &display.device,
             display.swapchain.dimensions(),
@@ -115,33 +114,40 @@ impl Application {
     /**
      * Render the screen.
      */
-    fn render(&mut self) {
+    fn render(&mut self) -> Result<()> {
         let (image_index, suboptimal, acquire_swapchain_future) =
-            acquire_next_image(self.display.swapchain.clone(), None).unwrap();
+            acquire_next_image(self.display.swapchain.clone(), None)
+                .with_context(|| {
+                    "unable to acquire next frame for rendering"
+                })?;
 
         let command_buffer = self.build_command_buffer(image_index);
 
         let future = acquire_swapchain_future
             .then_execute(self.display.graphics_queue.clone(), command_buffer)
-            .unwrap()
+            .with_context(|| "unable to execute the display command buffer")?
             .then_swapchain_present(
                 self.display.present_queue.clone(),
                 self.display.swapchain.clone(),
                 image_index,
             )
             .then_signal_fence_and_flush()
-            .unwrap();
+            .with_context(|| "unable to present, signal, and flush")?;
 
         // wait for the frame to finish
-        future.wait(None).unwrap();
+        future.wait(None).with_context(|| {
+            "error while waiting for the frame to complete!"
+        })?;
 
         if suboptimal {
-            self.rebuild_swapchain_resources();
+            self.rebuild_swapchain_resources()?;
         }
+
+        Ok(())
     }
 
     /// Rebuild the swapchain and command buffers
-    fn rebuild_swapchain_resources(&mut self) {
+    fn rebuild_swapchain_resources(&mut self) -> Result<()> {
         log::debug!("rebuilding swapchain resources");
         self.display.rebuild_swapchain();
         self.pipeline = triangle_pipeline::create_graphics_pipeline(
@@ -149,18 +155,24 @@ impl Application {
             self.display.swapchain.dimensions(),
             &self.display.render_pass,
         )
-        .expect("unable to rebuild the triangle pipeline");
+        .context("unable to rebuild the triangle pipeline")?;
+        Ok(())
     }
 
     /**
      * Main application loop for this window. Blocks the thread until the
      * window is closed.
      */
-    pub fn main_loop(mut self) {
-        let event_loop = self.display.event_loop.take().unwrap();
+    pub fn main_loop(mut self) -> Result<()> {
+        let event_loop = self
+            .display
+            .event_loop
+            .take()
+            .context("unable to take ownership of the event loop")?;
 
         // render once before showing the window so it's not garbage
-        self.render();
+        self.render()
+            .context("unable to render the first application frame")?;
         self.display.surface.window().set_visible(true);
 
         event_loop.run(move |event, _, control_flow| {
@@ -177,15 +189,26 @@ impl Application {
                 Event::WindowEvent {
                     event: WindowEvent::Resized(_),
                     ..
-                } => {
-                    self.rebuild_swapchain_resources();
-                }
+                } => match self.rebuild_swapchain_resources() {
+                    Err(error) => {
+                        log::error!(
+                            "unable to rebuild the swapchain {}",
+                            error
+                        );
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    Ok(_) => {}
+                },
 
-                Event::MainEventsCleared => {
-                    // redraw here
-                    self.render();
-                    self.display.surface.window().request_redraw();
-                }
+                Event::MainEventsCleared => match self.render() {
+                    Err(error) => {
+                        log::error!("unable to render the frame {}", error);
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    Ok(_) => {
+                        self.display.surface.window().request_redraw();
+                    }
+                },
 
                 _ => (),
             }
