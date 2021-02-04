@@ -24,7 +24,7 @@ pub fn create_logical_device(
 
     let (device, queues) = Device::new(
         *physical_device,
-        &Features::none(),
+        &required_device_features(),
         &required_device_extensions(),
         families,
     )
@@ -83,8 +83,12 @@ fn is_device_suitable(
     } else {
         false
     };
+    let features_supported = check_device_feature_support(&device);
 
-    queue_supported && extensions_supported && swap_chain_adequate
+    queue_supported
+        && extensions_supported
+        && swap_chain_adequate
+        && features_supported
 }
 
 /// Check that the device supports all of the required extensions
@@ -100,5 +104,21 @@ fn required_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
         ..DeviceExtensions::none()
+    }
+}
+
+/// Check that the device supports all of the required features
+fn check_device_feature_support(device: &PhysicalDevice) -> bool {
+    device
+        .supported_features()
+        .intersection(&required_device_features())
+        .tessellation_shader
+}
+
+/// Yield the set of required features
+fn required_device_features() -> Features {
+    Features {
+        tessellation_shader: true,
+        ..Features::none()
     }
 }
