@@ -174,17 +174,7 @@ fn choose_image_count(capabilities: &Capabilities) -> u32 {
 fn choose_swap_surface_format(
     capabilities: &Capabilities,
 ) -> (Format, ColorSpace) {
-    log::info!(
-        "supported display formats\n{}",
-        capabilities
-            .supported_formats
-            .iter()
-            .map(|(format, color_space)| {
-                std::format!("{:?} - {:?}", format, color_space)
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    );
+    log::info!("display formats {:?}", capabilities.supported_formats);
 
     let (format, color_space) = *capabilities
         .supported_formats
@@ -195,7 +185,7 @@ fn choose_swap_surface_format(
         })
         .unwrap_or_else(|| &capabilities.supported_formats[0]);
 
-    log::info!("selected display format: {:?} - {:?}", format, color_space);
+    log::info!("chosen format: {:?}", (format, color_space));
 
     (format, color_space)
 }

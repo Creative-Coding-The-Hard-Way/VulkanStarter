@@ -11,30 +11,14 @@ const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 
 pub fn create_instance() -> Result<Arc<Instance>> {
     if ENABLE_VALIDATION_LAYERS && !check_debug_layers()? {
-        log::warn!(
-            "validation layers requested, but they were not all avialable!"
-        )
+        log::warn!("requested validation layers are unavailable")
     }
 
     let supported_extensions = InstanceExtensions::supported_by_core()
         .context("unable to get supported instance extensions")?;
     let required_extensions = required_extensions();
-    log::info!(
-        "supported extensions \n {}",
-        format!("{:?}", supported_extensions)
-            .as_str()
-            .replace(",", "\n")
-            .replace("[", "")
-            .replace("]", "")
-    );
-    log::info!(
-        "required extensions \n {}",
-        format!("{:?}", required_extensions)
-            .as_str()
-            .replace(",", "\n")
-            .replace("[", "")
-            .replace("]", "")
-    );
+    log::info!("supported extensions: {:?}", supported_extensions);
+    log::info!("required extensions: {:?}", required_extensions);
 
     let app_info = ApplicationInfo {
         application_name: Some("Vulkan Experiments".into()),
@@ -55,7 +39,7 @@ fn check_debug_layers() -> Result<bool> {
         .map(|layer| layer.name().to_owned())
         .collect();
 
-    log::info!("available debug layers \n{}", available_layers.join("\n"));
+    log::info!("available debug layers {:?}", available_layers);
 
     let all_available = VALIDATION_LAYERS.iter().all(|required_layer| {
         available_layers.contains(&required_layer.to_string())

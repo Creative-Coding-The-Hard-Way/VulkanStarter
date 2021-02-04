@@ -47,7 +47,7 @@ pub fn pick_physical_device<'a>(
         .iter()
         .map(|properties| properties.name().to_owned())
         .collect();
-    log::info!("available devices\n  {}", names.join("\n  "));
+    log::info!("available devices {:?}", names);
 
     devices
         .iter()

@@ -42,7 +42,7 @@ impl Display {
 
         let event_loop: EventLoop<()> = EventLoop::new();
         let surface = WindowBuilder::new()
-            .with_title("vulkan experiments")
+            .with_title("vulkan starter")
             .with_resizable(true)
             .with_decorations(true)
             .with_visible(false)
